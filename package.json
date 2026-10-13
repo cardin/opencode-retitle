@@ -1,6 +1,6 @@
 {
   "name": "opencode-retitle",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Keep OpenCode session titles meaningful: regenerate them after N turns, after compaction, and after the first response in a forked session.",
   "type": "module",
   "license": "MIT",
