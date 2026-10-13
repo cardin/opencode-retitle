@@ -62,6 +62,36 @@ test("condenseTranscript keeps the most recent lines within budget", () => {
   assert.ok(!transcript.text.includes("a".repeat(50)))
 })
 
+test("condenseTranscript truncates each labelled line", () => {
+  const user = condenseTranscript([{ role: "user", text: "x".repeat(5000) }])
+  assert.equal(user.text.length, 1000)
+  assert.equal(user.text, "User: " + "x".repeat(994))
+
+  const assistant = condenseTranscript([{ role: "assistant", text: "x".repeat(5000) }])
+  assert.equal(assistant.text.length, 1000)
+  assert.equal(assistant.text, "Assistant: " + "x".repeat(989))
+})
+
+test("condenseTranscript never exceeds the total character budget", () => {
+  const messages: TranscriptMessage[] = []
+  for (let i = 0; i < 10; i += 1) {
+    messages.push({ role: i % 2 === 0 ? "user" : "assistant", text: `${i}`.repeat(5000) })
+  }
+  const transcript = condenseTranscript(messages)
+  assert.ok(transcript.text.length <= 3100, `transcript was ${transcript.text.length} chars`)
+  // Three 1000-char lines plus their separators fit the budget.
+  assert.equal(transcript.text.split("\n").length, 3)
+})
+
+test("condenseTranscript honours an explicit per-message budget", () => {
+  const transcript = condenseTranscript(
+    [{ role: "user", text: "a".repeat(5000) }],
+    400,
+    1000,
+  )
+  assert.ok(transcript.text.length <= 400, `transcript was ${transcript.text.length} chars`)
+})
+
 test("buildTitlePrompt embeds the transcript and constraints", () => {
   const prompt = buildTitlePrompt("User: hello")
   assert.match(prompt, /Generate a short title/)

@@ -10,7 +10,11 @@ export interface Transcript {
   userLength: number
 }
 
-const DEFAULT_MAX_CHARS = 6000
+/** Maximum characters of the assembled transcript sent for title inference. */
+const DEFAULT_MAX_CHARS = 3100
+
+/** Maximum characters kept from any single message. */
+const DEFAULT_MAX_MESSAGE_CHARS = 1000
 
 /** Drop fenced code blocks so titles are not drawn from code. */
 function stripCodeBlocks(input: string): string {
@@ -21,13 +25,22 @@ function collapse(input: string): string {
   return input.replace(/\s+/g, " ").trim()
 }
 
+function truncate(input: string, maxChars: number): string {
+  return maxChars > 0 && input.length > maxChars ? input.slice(0, maxChars) : input
+}
+
 /**
  * Build a compact transcript, keeping the most recent messages within the
  * character budget and labelling each turn by role.
+ *
+ * Every labelled line is truncated to `maxMessageChars` and the assembled
+ * transcript never exceeds `maxChars`, so a single large paste cannot inflate
+ * the prompt.
  */
 export function condenseTranscript(
   messages: readonly TranscriptMessage[],
   maxChars: number = DEFAULT_MAX_CHARS,
+  maxMessageChars: number = DEFAULT_MAX_MESSAGE_CHARS,
 ): Transcript {
   const userLength = messages
     .filter((message) => message.role === "user")
@@ -37,18 +50,21 @@ export function condenseTranscript(
   const lines: string[] = []
   for (const message of messages) {
     if (message.role === "other") continue
-    const text = collapse(stripCodeBlocks(message.text))
-    if (!text) continue
-    lines.push(`${message.role === "user" ? "User" : "Assistant"}: ${text}`)
+    const body = collapse(stripCodeBlocks(message.text))
+    if (!body) continue
+    const label = message.role === "user" ? "User: " : "Assistant: "
+    lines.push(truncate(label + body, maxMessageChars))
   }
 
   const kept: string[] = []
   let budget = maxChars
   for (let i = lines.length - 1; i >= 0; i -= 1) {
     const line = lines[i] as string
-    if (line.length + 1 > budget && kept.length > 0) break
-    kept.unshift(line)
-    budget -= line.length + 1
+    if (kept.length > 0 && line.length + 1 > budget) break
+    const text = truncate(line, budget)
+    if (!text) break
+    kept.unshift(text)
+    budget -= text.length + 1
   }
 
   return { text: kept.join("\n"), userLength }
