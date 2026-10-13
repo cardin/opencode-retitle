@@ -110,11 +110,10 @@ fits none of the rows above pauses retitling for that session; run
 `/retitle-enable` to resume.
 
 **Sessions the plugin meets mid-flight.** The first time the plugin sees a
-session it seeds the turn counter from the existing conversation and inspects the
-current title. A title that is not a default, a fork title, or one we wrote is
-treated as manually chosen, so the session starts paused. This only affects a
-session the plugin has never recorded; state is persisted, so a restart does not
-re-trigger it.
+session it inspects the current title. A title that is not a default, a fork
+title, or one we wrote is treated as manually chosen, so the session starts
+paused. This only affects a session the plugin has never recorded; state is
+persisted, so a restart does not re-trigger it.
 
 This is the one case where an auto-generated title can be mistaken for a manual
 one: if OpenCode generated the title before the plugin loaded, there is no way to
@@ -124,10 +123,10 @@ instead of pausing them.
 ## Behaviour notes
 
 - Turn counting uses `session.inbox.enqueued` items of type `user`, so synthetic
-  and command traffic does not inflate the count. On first sight the counter is
-  seeded from the existing conversation.
-- `session.created` initializes a new session at zero turns so the interval is
-  measured from the start of the conversation.
+  and command traffic does not inflate the count.
+- The counter means **prompts since the last rename**. It resets after every
+  retitle — turn, compaction, fork, or `/retitle-enable` — so two renames never
+  bunch up and each interval is a full N prompts.
 - Fork retitling is armed by `session.forked` and fires on the next
   `session.step.ended`.
 - Title generation reuses the session's current model unless `model` is set, and

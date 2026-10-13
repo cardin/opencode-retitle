@@ -50,7 +50,7 @@ test("formatStatus is short and plain text", () => {
   assert.ok(!text.includes("Baseline"))
   assert.match(text, /^Title origin: manual \/ external$/m)
   assert.match(text, /^Retitling: paused \(run \/retitle-enable\)$/m)
-  assert.match(text, /^Turns counted: 4$/m)
+  assert.match(text, /^Turns since retitle: 4 of 5$/m)
   assert.equal(text.split("\n").length, 3)
 })
 

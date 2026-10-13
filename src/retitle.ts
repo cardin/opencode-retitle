@@ -59,9 +59,10 @@ export class RetitleCoordinator {
   /**
    * Prepare a session the first time the plugin sees it.
    *
-   * Seeds the turn counter from the conversation that already exists, and — when
-   * the session already carries a title the plugin did not set and cannot
-   * attribute — treats it as manually named and pauses retitling.
+   * When the session already carries a title the plugin did not set and cannot
+   * attribute, it is treated as manually named and retitling pauses. The turn
+   * counter starts at zero and restarts after every retitle, so it always means
+   * "prompts since the last rename".
    */
   async ensureInitialized(sessionID: string): Promise<SessionState> {
     const { state, persisted } = await this.deps.store.loadDetailed(sessionID)
@@ -70,14 +71,6 @@ export class RetitleCoordinator {
       return state
     }
     this.initialized.add(sessionID)
-
-    try {
-      const messages = await this.deps.readTranscript(sessionID)
-      const userTurns = messages.filter((message) => message.role === "user").length
-      if (userTurns > state.turns) state.turns = userTurns
-    } catch (error) {
-      this.deps.log(`could not read history for ${sessionID}`, error)
-    }
 
     let title: string | undefined
     try {
@@ -110,7 +103,7 @@ export class RetitleCoordinator {
     return this.ensureInitialized(sessionID)
   }
 
-  /** A session was created. Establishes its baseline turn count and title origin. */
+  /** A session was created. Establishes its title origin. */
   async onSessionCreated(sessionID: string): Promise<void> {
     await this.ensureInitialized(sessionID)
   }
@@ -244,8 +237,10 @@ export class RetitleCoordinator {
       return
     }
 
-    // Record our write before applying it so the resulting rename is recognised.
+    // Record our write before applying it so the resulting rename is recognised,
+    // and restart the turn interval so renames never bunch up.
     state.lastWrite = title
+    state.turns = 0
     await store.save(sessionID, state)
     await this.deps.applyTitle(sessionID, title)
     this.deps.log(`retitled (${reason}) -> ${title}`)
@@ -326,7 +321,7 @@ export function formatStatus(
     state.locked
       ? "Retitling: paused (run /retitle-enable)"
       : "Retitling: active",
-    `Turns counted: ${state.turns}`,
+    `Turns since retitle: ${state.turns}${config.turns > 0 ? ` of ${config.turns}` : ""}`,
   ]
 
   if (state.forkPending) lines.push("Fork pending: yes")

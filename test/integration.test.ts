@@ -235,12 +235,21 @@ test("repeats every N turns", async () => {
   assert.deepEqual(harness.updates, ["Generated title 1", "Generated title 2"])
 })
 
-test("seeds the turn counter from existing history", async () => {
-  // Two prior user turns plus this prompt reaches the interval of three.
-  const harness = await createHarness({ turns: 3 }, { priorUserMessages: 2 })
-  harness.push(userPrompt())
+test("resets the turn interval after a retitle", async () => {
+  // turns = 3, so the schedule is measured from each rename, not from session start.
+  const harness = await createHarness({ turns: 3, minPromptLength: 0 }, { priorUserMessages: 0 })
+
+  harness.push(userPrompt()) // 1
+  harness.push({ type: "session.compaction.ended", data: { sessionID: "ses_test" } })
   await settle(() => harness.updates.length === 1)
-  assert.equal(harness.updates.length, 1)
+
+  harness.push(userPrompt()) // 1 since the compaction retitle
+  harness.push(userPrompt()) // 2
+  await harness.settle()
+  assert.equal(harness.updates.length, 1, "two prompts must not reach the interval")
+
+  harness.push(userPrompt()) // 3
+  await settle(() => harness.updates.length === 2)
 })
 
 test("locks a session whose title predates the plugin", async () => {
