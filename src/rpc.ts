@@ -20,7 +20,7 @@ const textOutput = {
  * is returned over RPC and rendered by the TUI plugin as a toast.
  */
 export const Retitle = Rpc.define({
-  id: "retitle",
+  id: "opencode-retitle",
   methods: {
     status: { input: sessionInput, output: textOutput },
     enable: { input: sessionInput, output: textOutput },

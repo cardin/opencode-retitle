@@ -1,7 +1,3 @@
-import { existsSync, readFileSync } from "node:fs"
-import { homedir } from "node:os"
-import { join } from "node:path"
-
 /** Resolved configuration used by the plugin at runtime. */
 export interface RetitleConfig {
   /** Retitle every N admitted user prompts. 0 disables the turn trigger. */
@@ -39,59 +35,8 @@ export const defaultConfig: RetitleConfig = {
   debug: false,
 }
 
-/** The set of settings a config file or plugin options may provide. */
+/** The set of settings the plugin options may provide. */
 export type PartialConfig = Partial<RetitleConfig>
-
-/**
- * Remove `//` and `/* ... *\/` comments from JSONC without touching string literals.
- */
-export function stripComments(input: string): string {
-  let out = ""
-  let i = 0
-  let inString = false
-  let quote = ""
-  while (i < input.length) {
-    const ch = input[i]
-    const next = input[i + 1]
-    if (inString) {
-      out += ch
-      if (ch === "\\") {
-        out += next ?? ""
-        i += 2
-        continue
-      }
-      if (ch === quote) inString = false
-      i += 1
-      continue
-    }
-    if (ch === '"' || ch === "'") {
-      inString = true
-      quote = ch
-      out += ch
-      i += 1
-      continue
-    }
-    if (ch === "/" && next === "/") {
-      while (i < input.length && input[i] !== "\n") i += 1
-      continue
-    }
-    if (ch === "/" && next === "*") {
-      i += 2
-      while (i < input.length && !(input[i] === "*" && input[i + 1] === "/")) i += 1
-      i += 2
-      continue
-    }
-    out += ch
-    i += 1
-  }
-  return out
-}
-
-/** Parse JSONC text, tolerating comments and trailing commas. */
-export function parseJsonc(input: string): unknown {
-  const cleaned = stripComments(input).replace(/,(\s*[}\]])/g, "$1")
-  return JSON.parse(cleaned)
-}
 
 function asRecord(value: unknown): Record<string, unknown> | undefined {
   if (value && typeof value === "object" && !Array.isArray(value)) {
@@ -125,44 +70,16 @@ export function normalizeConfig(raw: unknown): PartialConfig {
   return out
 }
 
-/** Candidate config files, most specific first. */
-export function configPaths(directory: string, home: string = homedir()): string[] {
-  return [
-    join(directory, ".opencode", "retitle.jsonc"),
-    join(directory, ".opencode", "retitle.json"),
-    join(home, ".config", "opencode", "retitle.jsonc"),
-    join(home, ".config", "opencode", "retitle.json"),
-  ]
-}
-
 /**
  * Resolve the effective configuration.
  *
- * Precedence (low to high): built-in defaults, the first existing config file,
- * then `ctx.options` supplied through `opencode.json(c)`.
+ * Every setting lives in `opencode.json(c)` under this plugin's `options`
+ * object; the plugin keeps no configuration file of its own. OpenCode merges the
+ * global and project `opencode.json(c)` files before the plugin runs. Settings
+ * that are absent fall back to the built-in defaults.
  */
-export function loadConfig(input: {
-  directory?: string
-  options?: unknown
-  home?: string
-}): RetitleConfig {
-  const directory = input.directory ?? process.cwd()
-  const home = input.home ?? homedir()
-
-  let fromFile: PartialConfig = {}
-  for (const path of configPaths(directory, home)) {
-    if (!existsSync(path)) continue
-    try {
-      fromFile = normalizeConfig(parseJsonc(readFileSync(path, "utf8")))
-    } catch {
-      fromFile = {}
-    }
-    break
-  }
-
-  const fromOptions = normalizeConfig(input.options)
-
-  return { ...defaultConfig, ...fromFile, ...fromOptions }
+export function loadConfig(input: { options?: unknown } = {}): RetitleConfig {
+  return { ...defaultConfig, ...normalizeConfig(input.options) }
 }
 
 /** Parse a `"providerID/modelID"` reference. Returns undefined when malformed. */

@@ -13,13 +13,13 @@ interface RetitleClient {
  * half over RPC, and a toast never schedules a model run.
  */
 export default Plugin.define({
-  id: "retitle.tui",
+  id: "opencode-retitle.tui",
   setup(context) {
     const retitle = context.client.rpc(Retitle) as unknown as RetitleClient
 
     const toast = (message: string, sessionID?: string): void => {
       context.ui.toast.show({
-        title: "retitle",
+        title: "opencode-retitle",
         message,
         ...(sessionID === undefined ? {} : { sessionID }),
       })

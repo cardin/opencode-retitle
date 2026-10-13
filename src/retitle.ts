@@ -259,7 +259,7 @@ export function resolveModel(
 }
 
 const SOURCE_LABEL = {
-  self: "retitle",
+  self: "opencode-retitle",
   default: "auto (default)",
   fork: "auto (fork)",
   builtin: "auto (generated)",

@@ -30,7 +30,7 @@ test("resolveModel returns undefined without any model", () => {
 })
 
 test("titleOrigin reports the source of the current title", () => {
-  assert.equal(titleOrigin({ locked: false, lastWrite: "Mine" }, "Mine"), "retitle")
+  assert.equal(titleOrigin({ locked: false, lastWrite: "Mine" }, "Mine"), "opencode-retitle")
   assert.equal(titleOrigin({ locked: false }, "New session - 2026-10-13T09:52:00.000Z"), "auto (default)")
   assert.equal(titleOrigin({ locked: false }, "Parent (fork #1)"), "auto (fork)")
   assert.equal(titleOrigin({ locked: false, baseline: "Generated thing" }, "Generated thing"), "auto (generated)")

@@ -1,33 +1,12 @@
 import assert from "node:assert/strict"
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs"
-import { tmpdir } from "node:os"
-import { join } from "node:path"
 import test from "node:test"
 
 import {
   defaultConfig,
   loadConfig,
   normalizeConfig,
-  parseJsonc,
   parseModelRef,
-  stripComments,
 } from "../src/config.ts"
-
-test("stripComments leaves comment-like text inside strings alone", () => {
-  const input = '{ "url": "https://example.com/a//b", "n": 1 } // trailing\n'
-  const stripped = stripComments(input)
-  assert.ok(stripped.includes("https://example.com/a//b"))
-  assert.ok(!stripped.includes("// trailing"))
-})
-
-test("stripComments removes block comments", () => {
-  assert.equal(stripComments('{ /* note */ "a": 1 }').trim(), '{  "a": 1 }')
-})
-
-test("parseJsonc tolerates comments and trailing commas", () => {
-  const parsed = parseJsonc('{\n  // note\n  "turns": 3,\n  "onFork": true,\n}\n')
-  assert.deepEqual(parsed, { turns: 3, onFork: true })
-})
 
 test("normalizeConfig keeps valid settings and drops bad ones", () => {
   assert.deepEqual(
@@ -75,25 +54,9 @@ test("parseModelRef splits on the first slash", () => {
   assert.equal(parseModelRef("provider/"), undefined)
 })
 
-test("loadConfig applies defaults, then file, then options", () => {
-  const home = mkdtempSync(join(tmpdir(), "retitle-home-"))
-  const directory = mkdtempSync(join(tmpdir(), "retitle-proj-"))
-
-  mkdirSync(join(home, ".config", "opencode"), { recursive: true })
-  writeFileSync(
-    join(home, ".config", "opencode", "retitle.jsonc"),
-    '{ // global\n  "turns": 3,\n  "titleMaxLength": 30,\n}\n',
-  )
-  mkdirSync(join(directory, ".opencode"), { recursive: true })
-  writeFileSync(
-    join(directory, ".opencode", "retitle.jsonc"),
-    '{ "turns": 9, "onFork": false }\n',
-  )
-
+test("loadConfig applies defaults, then plugin options", () => {
   const config = loadConfig({
-    directory,
-    home,
-    options: { titleMaxLength: 12 },
+    options: { turns: 9, onFork: false, titleMaxLength: 12 },
   })
 
   assert.equal(config.turns, 9)
@@ -102,8 +65,6 @@ test("loadConfig applies defaults, then file, then options", () => {
   assert.equal(config.onCompaction, defaultConfig.onCompaction)
 })
 
-test("loadConfig falls back to defaults with no files or options", () => {
-  const home = mkdtempSync(join(tmpdir(), "retitle-home-"))
-  const directory = mkdtempSync(join(tmpdir(), "retitle-proj-"))
-  assert.deepEqual(loadConfig({ directory, home }), defaultConfig)
+test("loadConfig falls back to defaults with no options", () => {
+  assert.deepEqual(loadConfig(), defaultConfig)
 })

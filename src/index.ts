@@ -47,18 +47,15 @@ function describe(detail: unknown): string {
 }
 
 export default Plugin.define({
-  id: "retitle",
+  id: "opencode-retitle",
   async setup(ctx) {
-    const config = loadConfig({
-      directory: ctx.location.directory,
-      options: ctx.options,
-    })
+    const config = loadConfig({ options: ctx.options })
 
     const log = (message: string, detail?: unknown): void => {
       if (!config.debug && detail === undefined) return
       const suffix = detail === undefined ? "" : ` (${describe(detail)})`
-      if (detail === undefined) console.log(`[retitle] ${message}`)
-      else console.error(`[retitle] ${message}${suffix}`)
+      if (detail === undefined) console.log(`[opencode-retitle] ${message}`)
+      else console.error(`[opencode-retitle] ${message}${suffix}`)
     }
 
     const store = new StateStore(ctx.storage as unknown as StorageLike)
