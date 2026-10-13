@@ -5,6 +5,7 @@ on:
     types: [published]
   workflow_dispatch:
 
+# Trusted publishing needs the OIDC token; no npm token is used or stored.
 permissions:
   contents: read
   id-token: write
@@ -13,12 +14,17 @@ jobs:
   npm:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v6
         with:
-          node-version: 24
-          registry-url: https://registry.npmjs.org
+          node-version: "24"
+          registry-url: "https://registry.npmjs.org"
+          package-manager-cache: false
+
+      # Trusted publishing requires npm >= 11.5.1; pin the major, not @latest.
+      - name: Ensure npm >= 11.5.1
+        run: npm install -g npm@11
 
       - name: Install
         run: npm ci
@@ -29,8 +35,7 @@ jobs:
       - name: Test
         run: npm test
 
-      # `prepublishOnly` re-runs typecheck + test inside the publish step.
+      # No NODE_AUTH_TOKEN: npm authenticates with the GitHub OIDC token, and
+      # provenance is generated automatically for a public package.
       - name: Publish
-        run: npm publish --provenance --access public
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: npm publish --access public
