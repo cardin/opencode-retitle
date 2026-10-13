@@ -35,6 +35,28 @@ export interface StorageLike {
 export const STORAGE_PREFIX = "session/"
 export const MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000
 
+/**
+ * Storage key prefix for "built-in title generation in flight" markers.
+ *
+ * OpenCode runs one plugin instance per open location and delivers *every*
+ * event to *every* instance, so a marker that lives only in memory is invisible
+ * to the instances that did not serve the title request. They then receive the
+ * resulting rename with no marker to explain it and mistake it for a manual
+ * rename, locking the session. Keeping the marker in shared storage makes every
+ * instance agree on the same attribution.
+ */
+export const BUILTIN_PREFIX = "builtin/"
+
+/** How long a built-in title generation stays attributable to OpenCode. */
+export const BUILTIN_TTL_MS = 120_000
+
+/** Read the timestamp out of a stored built-in-pending marker. */
+function builtinPendingAt(value: unknown): number | undefined {
+  if (!value || typeof value !== "object") return undefined
+  const at = (value as { at?: unknown }).at
+  return typeof at === "number" ? at : undefined
+}
+
 export function emptyState(now: number): SessionState {
   return { turns: 0, locked: false, forkPending: false, updated: now }
 }
@@ -100,6 +122,31 @@ export class StateStore {
     return this.cache.get(sessionID)
   }
 
+  /**
+   * Record that the built-in title generator is producing a title for this
+   * session. Written straight to shared storage — and read back the same way —
+   * so every plugin instance sees the same marker.
+   */
+  async markBuiltinPending(sessionID: string, now: number = Date.now()): Promise<void> {
+    await this.storage.set(BUILTIN_PREFIX + sessionID, { at: now })
+  }
+
+  /**
+   * Whether a built-in title generation for this session is recent enough to
+   * attribute the next rename to OpenCode. Expired markers are removed. This
+   * never uses the in-memory cache: another instance may have written it.
+   */
+  async isBuiltinPending(sessionID: string, now: number = Date.now()): Promise<boolean> {
+    const value = await this.storage.get(BUILTIN_PREFIX + sessionID)
+    const at = builtinPendingAt(value)
+    if (at === undefined) return false
+    if (now - at >= BUILTIN_TTL_MS) {
+      await this.storage.remove(BUILTIN_PREFIX + sessionID)
+      return false
+    }
+    return true
+  }
+
   async save(
     sessionID: string,
     state: SessionState,
@@ -144,5 +191,19 @@ export class StateStore {
       }
       after = page.next
     } while (after !== undefined)
+
+    let afterBuiltin: string | undefined
+    do {
+      const page = await this.storage.scan({
+        prefix: BUILTIN_PREFIX,
+        limit: 200,
+        ...(afterBuiltin === undefined ? {} : { after: afterBuiltin }),
+      })
+      for (const entry of page.entries) {
+        const at = builtinPendingAt(entry.value)
+        if (at === undefined || now - at >= BUILTIN_TTL_MS) await this.storage.remove(entry.key)
+      }
+      afterBuiltin = page.next
+    } while (afterBuiltin !== undefined)
   }
 }

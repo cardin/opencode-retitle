@@ -11,9 +11,6 @@ type SessionMessage = Awaited<ReturnType<Context["session"]["context"]>>[number]
 type OpenCodeEvent =
   ReturnType<Context["event"]["subscribe"]> extends AsyncIterable<infer Event> ? Event : never
 
-/** How long a built-in title generation stays attributable to OpenCode. */
-const BUILTIN_TTL_MS = 120_000
-
 function toTranscript(messages: readonly SessionMessage[]): TranscriptMessage[] {
   const out: TranscriptMessage[] = []
   for (const message of messages) {
@@ -60,31 +57,24 @@ export default Plugin.define({
 
     const store = new StateStore(ctx.storage as unknown as StorageLike)
 
-    // Sessions whose built-in title generation is currently in flight, so the
-    // resulting rename is not mistaken for a manual one.
-    const builtinPending = new Map<string, number>()
-    const isBuiltinPending = (sessionID: string): boolean => {
-      const at = builtinPending.get(sessionID)
-      if (at === undefined) return false
-      if (Date.now() - at >= BUILTIN_TTL_MS) {
-        builtinPending.delete(sessionID)
-        return false
+    // The built-in title generator's "in flight" marker lives in shared storage,
+    // never in memory. OpenCode instantiates one plugin per open location and
+    // delivers every event to every instance, so an instance that did not serve
+    // the title request would otherwise see the generated rename with no marker
+    // and lock the session as a manual rename.
+    await ctx.session.hook("title", async (event) => {
+      try {
+        await store.markBuiltinPending(event.sessionID)
+      } catch (error) {
+        log("could not record built-in title generation", error)
       }
-      return true
-    }
-    const clearBuiltinPending = (sessionID: string): void => {
-      builtinPending.delete(sessionID)
-    }
-    await ctx.session.hook("title", (event) => {
-      builtinPending.set(event.sessionID, Date.now())
     })
 
     const coordinator = new RetitleCoordinator({
       config,
       store,
       log,
-      isBuiltinPending,
-      clearBuiltinPending,
+      isBuiltinPending: (sessionID) => store.isBuiltinPending(sessionID),
       async readTranscript(sessionID) {
         return toTranscript(await ctx.session.context({ sessionID }))
       },
@@ -129,7 +119,22 @@ export default Plugin.define({
     void store.prune().catch(() => undefined)
 
     const controller = new AbortController()
+
+    // OpenCode loads one plugin instance per open location and streams every
+    // event to all of them, so ignore events that belong to another directory.
+    const isOurLocation = (event: OpenCodeEvent): boolean => {
+      const there = (event as { location?: { directory?: string; workspaceID?: string } }).location
+      if (there?.directory === undefined) return true
+      if (there.directory !== ctx.location.directory) return false
+      return (
+        there.workspaceID === undefined ||
+        ctx.location.workspaceID === undefined ||
+        there.workspaceID === ctx.location.workspaceID
+      )
+    }
+
     const handle = async (event: OpenCodeEvent): Promise<void> => {
+      if (!isOurLocation(event)) return
       switch (event.type) {
         case "session.created":
           await coordinator.onSessionCreated(event.data.sessionID)

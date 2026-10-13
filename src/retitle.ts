@@ -30,10 +30,8 @@ export interface RetitleDeps {
   generateTitle(input: { model: ModelRef; prompt: string }): Promise<string>
   /** Persist a title on the session. */
   applyTitle(sessionID: string, title: string): Promise<void>
-  /** Whether the built-in title generator is currently producing a title. */
-  isBuiltinPending(sessionID: string): boolean
-  /** Stop treating the built-in generator as pending for a session. */
-  clearBuiltinPending(sessionID: string): void
+  /** Whether the built-in title generator recently started a title for this session. */
+  isBuiltinPending(sessionID: string): Promise<boolean>
   log(message: string, detail?: unknown): void
 }
 
@@ -146,20 +144,27 @@ export class RetitleCoordinator {
     void this.retitle(sessionID, "fork")
   }
 
-  /** A title change was observed. Attributes it and updates the guard. */
+  /**
+   * A title change was observed. Attributes it and updates the guard.
+   *
+   * The built-in marker is deliberately not consumed here. Consuming it would
+   * let concurrent instances (OpenCode delivers every event to every instance)
+   * flip each other's decision: whichever read it first classifies "builtin",
+   * the rest classify "foreign" and lock the session. Leaving it to expire keeps
+   * every instance in agreement.
+   */
   async onRenamed(sessionID: string, title: string): Promise<void> {
     const { config, store } = this.deps
     const state = await this.ensureInitialized(sessionID)
     const result = classifyTitleChange({
       title,
       lastWrite: state.lastWrite,
-      builtinPending: this.deps.isBuiltinPending(sessionID),
+      builtinPending: await this.deps.isBuiltinPending(sessionID),
       locked: state.locked,
       respectManualRename: config.respectManualRename,
     })
 
     if (result.source === "self") return
-    if (result.source === "builtin") this.deps.clearBuiltinPending(sessionID)
     if (result.source === "default" || result.source === "fork" || result.source === "builtin") {
       state.baseline = title
     }
