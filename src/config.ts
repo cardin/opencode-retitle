@@ -13,6 +13,12 @@ export interface RetitleConfig {
    * first sees it as manually named (paused). Disable to retitle such sessions.
    */
   lockExistingTitles: boolean
+  /**
+   * How long (ms) a built-in title generation stays attributable to OpenCode, so
+   * the resulting rename is not mistaken for a manual one. Must outlast the
+   * title model call.
+   */
+  builtinGraceMs: number
   /** `"providerID/modelID"` for title generation, or null to inherit the session model. */
   model: string | null
   /** Maximum generated title length in characters. */
@@ -23,12 +29,16 @@ export interface RetitleConfig {
   debug: boolean
 }
 
+/** Default for {@link RetitleConfig.builtinGraceMs}. */
+export const DEFAULT_BUILTIN_GRACE_MS = 45_000
+
 export const defaultConfig: RetitleConfig = {
   turns: 5,
   onCompaction: true,
   onFork: true,
   respectManualRename: true,
   lockExistingTitles: true,
+  builtinGraceMs: DEFAULT_BUILTIN_GRACE_MS,
   model: null,
   titleMaxLength: 60,
   minPromptLength: 10,
@@ -58,6 +68,13 @@ export function normalizeConfig(raw: unknown): PartialConfig {
   if (typeof r.onFork === "boolean") out.onFork = r.onFork
   if (typeof r.respectManualRename === "boolean") out.respectManualRename = r.respectManualRename
   if (typeof r.lockExistingTitles === "boolean") out.lockExistingTitles = r.lockExistingTitles
+  if (
+    typeof r.builtinGraceMs === "number" &&
+    Number.isFinite(r.builtinGraceMs) &&
+    r.builtinGraceMs >= 0
+  ) {
+    out.builtinGraceMs = Math.floor(r.builtinGraceMs)
+  }
   if (r.model === null) out.model = null
   else if (typeof r.model === "string" && r.model.trim()) out.model = r.model.trim()
   if (typeof r.titleMaxLength === "number" && r.titleMaxLength > 0) {

@@ -423,3 +423,15 @@ test("handles events that carry our own location", async () => {
   const status = await harness.rpc.status({ sessionID: "ses_test" })
   assert.match(status.text, /^Title origin: manual \/ external$/m)
 })
+
+test("builtinGraceMs controls how long a built-in title stays attributable", async () => {
+  const harness = await createHarness({ turns: 1, builtinGraceMs: 0 })
+
+  await harness.completeTitleHook()
+  harness.push({ type: "session.renamed", data: { sessionID: "ses_test", title: "Auto generated" } })
+  await harness.settle()
+
+  // A zero grace window means the generated rename is no longer ours to attribute.
+  const status = await harness.rpc.status({ sessionID: "ses_test" })
+  assert.match(status.text, /^Title origin: manual \/ external$/m)
+})

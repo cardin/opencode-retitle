@@ -1,3 +1,5 @@
+import { DEFAULT_BUILTIN_GRACE_MS } from "./config.ts"
+
 /** Durable, per-session bookkeeping for the plugin. */
 export interface SessionState {
   /** Admitted user prompts seen for this session. */
@@ -47,9 +49,6 @@ export const MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000
  */
 export const BUILTIN_PREFIX = "builtin/"
 
-/** How long a built-in title generation stays attributable to OpenCode. */
-export const BUILTIN_TTL_MS = 120_000
-
 /** Read the timestamp out of a stored built-in-pending marker. */
 function builtinPendingAt(value: unknown): number | undefined {
   if (!value || typeof value !== "object") return undefined
@@ -80,12 +79,14 @@ export class StateStore {
   private readonly storage: StorageLike
   private readonly cache: Map<string, SessionState>
   private readonly persisted: Set<string>
+  private readonly builtinTtlMs: number
   private writes: number
 
-  constructor(storage: StorageLike) {
+  constructor(storage: StorageLike, builtinTtlMs: number = DEFAULT_BUILTIN_GRACE_MS) {
     this.storage = storage
     this.cache = new Map()
     this.persisted = new Set()
+    this.builtinTtlMs = builtinTtlMs
     this.writes = 0
   }
 
@@ -140,7 +141,7 @@ export class StateStore {
     const value = await this.storage.get(BUILTIN_PREFIX + sessionID)
     const at = builtinPendingAt(value)
     if (at === undefined) return false
-    if (now - at >= BUILTIN_TTL_MS) {
+    if (now - at >= this.builtinTtlMs) {
       await this.storage.remove(BUILTIN_PREFIX + sessionID)
       return false
     }
@@ -201,7 +202,7 @@ export class StateStore {
       })
       for (const entry of page.entries) {
         const at = builtinPendingAt(entry.value)
-        if (at === undefined || now - at >= BUILTIN_TTL_MS) await this.storage.remove(entry.key)
+        if (at === undefined || now - at >= this.builtinTtlMs) await this.storage.remove(entry.key)
       }
       afterBuiltin = page.next
     } while (afterBuiltin !== undefined)

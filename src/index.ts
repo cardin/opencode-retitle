@@ -55,7 +55,7 @@ export default Plugin.define({
       else console.error(`[opencode-retitle] ${message}${suffix}`)
     }
 
-    const store = new StateStore(ctx.storage as unknown as StorageLike)
+    const store = new StateStore(ctx.storage as unknown as StorageLike, config.builtinGraceMs)
 
     // The built-in title generator's "in flight" marker lives in shared storage,
     // never in memory. OpenCode instantiates one plugin per open location and

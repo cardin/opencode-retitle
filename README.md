@@ -26,6 +26,7 @@ Add it to `opencode.json(c)` and pass settings under `options`:
         "onFork": true,                // retitle after the first response in a fork
         "respectManualRename": true,   // pause retitling once a foreign title appears
         "lockExistingTitles": true,    // pause a session that already had a title when first seen
+        "builtinGraceMs": 45000,       // ms a built-in title stays attributable to OpenCode
         "model": null,                 // "providerID/modelID"; null = the session's model
         "titleMaxLength": 60,
         "minPromptLength": 10,         // skip when there is too little user text
@@ -82,9 +83,9 @@ attribute it. Set `lockExistingTitles` to `false` to retitle such sessions
 instead of pausing them.
 
 **Timing.** The marker that OpenCode is generating a title is shared across
-plugin instances and expires after two minutes. A rename you make in that
-window, right after an auto-generated title, is attributed to OpenCode and does
-not pause retitling.
+plugin instances and expires after `builtinGraceMs` (45 seconds by default). A
+rename you make in that window, right after an auto-generated title, is
+attributed to OpenCode and does not pause retitling.
 
 ## Behaviour notes
 

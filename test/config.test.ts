@@ -16,6 +16,7 @@ test("normalizeConfig keeps valid settings and drops bad ones", () => {
       onFork: "yes",
       respectManualRename: false,
       lockExistingTitles: false,
+      builtinGraceMs: 45000,
       model: " anthropic/claude-sonnet-4-5 ",
       titleMaxLength: 40,
       minPromptLength: 0,
@@ -27,6 +28,7 @@ test("normalizeConfig keeps valid settings and drops bad ones", () => {
       onCompaction: false,
       respectManualRename: false,
       lockExistingTitles: false,
+      builtinGraceMs: 45000,
       model: "anthropic/claude-sonnet-4-5",
       titleMaxLength: 40,
       minPromptLength: 0,
@@ -40,7 +42,15 @@ test("normalizeConfig accepts an explicit null model", () => {
 })
 
 test("normalizeConfig rejects negative and non-finite numbers", () => {
-  assert.deepEqual(normalizeConfig({ turns: -1, titleMaxLength: 0, minPromptLength: Number.NaN }), {})
+  assert.deepEqual(
+    normalizeConfig({
+      turns: -1,
+      titleMaxLength: 0,
+      minPromptLength: Number.NaN,
+      builtinGraceMs: -1,
+    }),
+    {},
+  )
 })
 
 test("parseModelRef splits on the first slash", () => {

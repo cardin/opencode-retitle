@@ -30,7 +30,7 @@
   ],
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "test": "node --test test/config.test.ts test/guard.test.ts test/titles.test.ts test/retitle.test.ts",
+    "test": "node --test test/config.test.ts test/guard.test.ts test/state.test.ts test/titles.test.ts test/retitle.test.ts",
     "test:integration": "node --test test/integration.test.ts",
     "test:all": "node --test test/*.test.ts",
     "prepublishOnly": "npm run typecheck && npm run test"

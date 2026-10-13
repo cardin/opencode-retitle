@@ -298,6 +298,9 @@ function describeConfig(config: RetitleConfig): string | undefined {
   if (config.lockExistingTitles !== defaultConfig.lockExistingTitles) {
     parts.push(`lockExisting=${config.lockExistingTitles}`)
   }
+  if (config.builtinGraceMs !== defaultConfig.builtinGraceMs) {
+    parts.push(`builtinGrace=${config.builtinGraceMs}`)
+  }
   if (config.model !== defaultConfig.model) parts.push(`model=${config.model ?? "session"}`)
   if (config.titleMaxLength !== defaultConfig.titleMaxLength) parts.push(`max=${config.titleMaxLength}`)
   if (config.minPromptLength !== defaultConfig.minPromptLength) parts.push(`min=${config.minPromptLength}`)
