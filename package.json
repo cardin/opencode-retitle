@@ -1,0 +1,45 @@
+{
+  "name": "opencode-retitle",
+  "version": "0.1.0",
+  "description": "Keep OpenCode session titles meaningful: regenerate them after N turns, after compaction, and after the first response in a forked session.",
+  "type": "module",
+  "license": "MIT",
+  "author": "Cardin Lee",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/cardin/opencode-retitle.git"
+  },
+  "homepage": "https://github.com/cardin/opencode-retitle#readme",
+  "bugs": {
+    "url": "https://github.com/cardin/opencode-retitle/issues"
+  },
+  "keywords": [
+    "opencode",
+    "opencode-plugin",
+    "session",
+    "title"
+  ],
+  "exports": {
+    ".": "./src/index.ts",
+    "./rpc": "./src/rpc.ts",
+    "./tui": "./src/tui.ts"
+  },
+  "files": [
+    "src",
+    "README.md"
+  ],
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "node --test test/config.test.ts test/guard.test.ts test/titles.test.ts test/retitle.test.ts",
+    "test:integration": "node --test test/integration.test.ts",
+    "test:all": "node --test test/*.test.ts",
+    "prepublishOnly": "npm run typecheck && npm run test"
+  },
+  "dependencies": {
+    "@opencode/plugin": "^2.0.27"
+  },
+  "devDependencies": {
+    "@types/node": "^22.15.0",
+    "typescript": "^5.7.3"
+  }
+}
