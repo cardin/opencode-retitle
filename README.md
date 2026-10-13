@@ -81,14 +81,10 @@ one: if OpenCode generated the title before the plugin loaded, there is no way t
 attribute it. Set `lockExistingTitles` to `false` to retitle such sessions
 instead of pausing them.
 
-**Why the built-in detection is shared, not local.** OpenCode runs one plugin
-instance per open location and fans every event out to all of them. The marker
-that says "the built-in generator is producing a title" therefore lives in
-plugin storage, not memory, so the instance that actually served the title
-request and the instances that merely observe the rename all reach the same
-conclusion. It expires two minutes after the generator starts; a rename you make
-inside that window, immediately after an auto-generated title, is attributed to
-OpenCode rather than to you.
+**Timing.** The marker that OpenCode is generating a title is shared across
+plugin instances and expires after two minutes. A rename you make in that
+window, right after an auto-generated title, is attributed to OpenCode and does
+not pause retitling.
 
 ## Behaviour notes
 
