@@ -83,7 +83,16 @@ export default Plugin.define({
         return { title: info.title, model: info.model }
       },
       async generateTitle({ model, prompt }) {
-        const result = await ctx.generate.text({
+        // OpenCode 2.2 deprecates `ctx.generate` in favour of
+        // `ctx.experimental.generate`. Prefer the new location when the running
+        // build provides it, and keep the old one for 2.0/2.1.
+        const experimental = (
+          ctx as unknown as {
+            experimental?: { generate?: typeof ctx.generate }
+          }
+        ).experimental
+        const generate = experimental?.generate ?? ctx.generate
+        const result = await generate.text({
           model: { providerID: model.providerID, id: model.id, variant: model.variant },
           prompt,
         })

@@ -76,6 +76,8 @@ async function createHarness(
   setupOptions: {
     initialTitle?: string
     priorUserMessages?: number
+    /** Delay title generation so a test can interleave a rename. */
+    generateDelayMs?: number
     /** Share one storage map between harnesses to model OpenCode's per-location instances. */
     storage?: Map<string, unknown>
     sessionID?: string
@@ -149,6 +151,9 @@ async function createHarness(
     },
     generate: {
       async text() {
+        if (setupOptions.generateDelayMs) {
+          await new Promise((resolve) => setTimeout(resolve, setupOptions.generateDelayMs))
+        }
         titleCounter += 1
         return { text: `Generated title ${titleCounter}` }
       },
@@ -320,6 +325,40 @@ test("pauses retitling after a manual rename and resumes on /retitle-enable", as
 
   const enabled = await harness.rpc.enable({ sessionID: "ses_test" })
   assert.match(enabled.text, /re-enabled/)
+  assert.equal(harness.updates.length, 1)
+})
+
+test("a manual rename during title generation is not overwritten", async () => {
+  // The model call takes long enough for the rename event to be delivered
+  // while the run is in flight. The run must re-check the title and lock
+  // instead of applying its older generation.
+  const harness = await createHarness(
+    { turns: 1, minPromptLength: 0 },
+    { generateDelayMs: 100, priorUserMessages: 0 },
+  )
+
+  harness.push(userPrompt())
+  await new Promise((resolve) => setTimeout(resolve, 20))
+  harness.push({
+    type: "session.renamed",
+    data: { sessionID: "ses_test", title: "My own title" },
+  })
+  await new Promise((resolve) => setTimeout(resolve, 200))
+
+  assert.equal(harness.updates.length, 0, "the in-flight title must not win")
+
+  const status = await harness.rpc.status({ sessionID: "ses_test" })
+  assert.match(status.text, /^Title origin: manual \/ external$/m)
+})
+
+test("does not lock a session whose title is still empty", async () => {
+  const harness = await createHarness(
+    { turns: 1, minPromptLength: 0 },
+    { initialTitle: "", priorUserMessages: 0 },
+  )
+
+  harness.push(userPrompt())
+  await settle(() => harness.updates.length === 1)
   assert.equal(harness.updates.length, 1)
 })
 

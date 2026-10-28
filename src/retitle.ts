@@ -77,7 +77,9 @@ export class RetitleCoordinator {
       this.deps.log(`could not read session ${sessionID}`, error)
     }
 
-    if (title !== undefined) {
+    // A title that is empty (or only whitespace) is not a manual rename: the
+    // session has not been named yet, so it must stay eligible for retitling.
+    if (title !== undefined && title.trim() !== "") {
       state.baseline = title
       if (
         this.deps.config.lockExistingTitles &&
@@ -237,7 +239,20 @@ export class RetitleCoordinator {
       this.deps.log(`skip retitle (${reason}): empty title from model`)
       return
     }
-    if (title === info.title) {
+
+    // A manual rename (or another plugin) can arrive while the model is
+    // generating. The rename event sets `locked`, but this run started before
+    // that and must not overwrite the newer title with a stale one.
+    const latest = await this.deps.readSession(sessionID)
+    if (state.locked) {
+      this.deps.log(`skip retitle (${reason}): session locked while generating`)
+      return
+    }
+    if (latest.title !== info.title) {
+      this.deps.log(`skip retitle (${reason}): title changed while generating`)
+      return
+    }
+    if (title === latest.title) {
       this.deps.log(`skip retitle (${reason}): title unchanged`)
       return
     }

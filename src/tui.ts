@@ -2,9 +2,17 @@ import { Plugin } from "@opencode/plugin/tui"
 
 import { Retitle, type RetitleTextResult } from "./rpc.ts"
 
+type Location = NonNullable<Plugin.Context["location"]>
+
 interface RetitleClient {
-  status(input: { sessionID: string }): Promise<RetitleTextResult>
-  enable(input: { sessionID: string }): Promise<RetitleTextResult>
+  status(
+    input: { sessionID: string },
+    options: { location: Location },
+  ): Promise<RetitleTextResult>
+  enable(
+    input: { sessionID: string },
+    options: { location: Location },
+  ): Promise<RetitleTextResult>
 }
 
 /**
@@ -29,6 +37,14 @@ export default Plugin.define({
       const route = context.ui.router.current()
       return route.type === "session" ? route.sessionID : undefined
     }
+
+    // A TUI can have several locations open, and a remote server has its own.
+    // Send the session's location with every RPC so the call reaches the plugin
+    // instance that owns this session instead of the default location's instance.
+    const currentLocation = (sessionID: string): Location =>
+      context.data.session.get(sessionID)?.location ??
+      context.location ??
+      context.data.location.default()
 
     const run = async (
       label: string,
@@ -59,7 +75,10 @@ export default Plugin.define({
           description: "Report whether this session's title was renamed manually",
           group: "Retitle",
           slash: { name: "retitle-status" },
-          run: () => run("Status", (sessionID) => retitle.status({ sessionID })),
+          run: () =>
+            run("Status", (sessionID) =>
+              retitle.status({ sessionID }, { location: currentLocation(sessionID) }),
+            ),
         },
         {
           id: "retitle.enable",
@@ -67,7 +86,10 @@ export default Plugin.define({
           description: "Clear a manual-rename pause and retitle this session now",
           group: "Retitle",
           slash: { name: "retitle-enable" },
-          run: () => run("Enable", (sessionID) => retitle.enable({ sessionID })),
+          run: () =>
+            run("Enable", (sessionID) =>
+              retitle.enable({ sessionID }, { location: currentLocation(sessionID) }),
+            ),
         },
       ],
     }))
