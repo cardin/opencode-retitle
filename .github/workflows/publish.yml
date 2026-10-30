@@ -33,7 +33,7 @@ jobs:
         run: npm run typecheck
 
       - name: Test
-        run: npm test
+        run: npm run test:all
 
       # No NODE_AUTH_TOKEN: npm authenticates with the GitHub OIDC token, and
       # provenance is generated automatically for a public package.

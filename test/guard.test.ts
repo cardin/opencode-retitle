@@ -60,6 +60,14 @@ test("an unexplained title is foreign and locks", () => {
   assert.equal(result.locked, true)
 })
 
+test("a blank title is treated as unset and never locks", () => {
+  for (const title of ["", "   ", "\n\t"]) {
+    const result = classifyTitleChange({ ...base, title })
+    assert.equal(result.source, "default")
+    assert.equal(result.locked, false)
+  }
+})
+
 test("foreign titles do not lock when the guard is off", () => {
   const result = classifyTitleChange({
     ...base,

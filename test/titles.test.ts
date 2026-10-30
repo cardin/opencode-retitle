@@ -20,6 +20,19 @@ test("sanitizeTitle uses the first non-empty line", () => {
   assert.equal(sanitizeTitle("\n\n  Add retitle plugin \n (extra)", 60), "Add retitle plugin")
 })
 
+test("sanitizeTitle strips markdown from both ends", () => {
+  assert.equal(sanitizeTitle("**Add retitle plugin**", 60), "Add retitle plugin")
+  assert.equal(sanitizeTitle("__Add retitle plugin__", 60), "Add retitle plugin")
+  assert.equal(sanitizeTitle("Add retitle plugin ##", 60), "Add retitle plugin")
+  assert.equal(sanitizeTitle("**Add retitle plugin.**", 60), "Add retitle plugin")
+})
+
+test("sanitizeTitle clamps by code points without splitting an emoji", () => {
+  const title = sanitizeTitle("😀".repeat(20), 10)
+  assert.equal(Array.from(title).length, 10)
+  assert.equal(title, "😀".repeat(10))
+})
+
 test("sanitizeTitle clamps to the maximum length", () => {
   assert.equal(sanitizeTitle("a".repeat(200), 20), "a".repeat(20))
   assert.equal(sanitizeTitle("Fix the provider state", 10), "Fix the pr")
@@ -49,6 +62,14 @@ test("condenseTranscript drops code blocks and other turns", () => {
   const transcript = condenseTranscript(messages)
   assert.ok(!transcript.text.includes("const a = 1"))
   assert.ok(!transcript.text.includes("ignored"))
+})
+
+test("condenseTranscript includes compaction summaries without counting them as user text", () => {
+  const transcript = condenseTranscript([
+    { role: "compaction", text: "Discussed the retitle provider state and the guard" },
+  ])
+  assert.equal(transcript.text, "Summary: Discussed the retitle provider state and the guard")
+  assert.equal(transcript.userLength, 0)
 })
 
 test("condenseTranscript keeps the most recent lines within budget", () => {

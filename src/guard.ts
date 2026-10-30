@@ -48,6 +48,12 @@ export interface ClassifyResult {
 export function classifyTitleChange(input: ClassifyInput): ClassifyResult {
   const { title, lastWrite, builtinPending, locked, respectManualRename } = input
 
+  // A blank title is "unset", not a human rename. OpenCode can emit an empty
+  // title while clearing a session, and locking on it would pause retitling
+  // forever even though there is nothing to protect.
+  if (title.trim() === "") {
+    return { source: "default", locked }
+  }
   if (lastWrite !== undefined && title === lastWrite) {
     return { source: "self", locked }
   }

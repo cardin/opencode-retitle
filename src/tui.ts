@@ -23,7 +23,10 @@ interface RetitleClient {
 export default Plugin.define({
   id: "opencode-retitle.tui",
   setup(context) {
-    const retitle = context.client.rpc(Retitle) as unknown as RetitleClient
+    // Resolve the RPC client per call: a TUI can reconnect or switch servers
+    // while this plugin instance stays loaded.
+    const retitleClient = (): RetitleClient =>
+      context.client.rpc(Retitle) as unknown as RetitleClient
 
     const toast = (message: string, sessionID?: string): void => {
       context.ui.toast.show({
@@ -41,10 +44,15 @@ export default Plugin.define({
     // A TUI can have several locations open, and a remote server has its own.
     // Send the session's location with every RPC so the call reaches the plugin
     // instance that owns this session instead of the default location's instance.
-    const currentLocation = (sessionID: string): Location =>
-      context.data.session.get(sessionID)?.location ??
-      context.location ??
-      context.data.location.default()
+    // The session cache may not have this session yet; sync it first.
+    const currentLocation = async (sessionID: string): Promise<Location> => {
+      let session = context.data.session.get(sessionID)
+      if (!session) {
+        await context.data.session.sync(sessionID)
+        session = context.data.session.get(sessionID)
+      }
+      return session?.location ?? context.location ?? context.data.location.default()
+    }
 
     const run = async (
       label: string,
@@ -76,8 +84,11 @@ export default Plugin.define({
           group: "Retitle",
           slash: { name: "retitle-status" },
           run: () =>
-            run("Status", (sessionID) =>
-              retitle.status({ sessionID }, { location: currentLocation(sessionID) }),
+            run("Status", async (sessionID) =>
+              retitleClient().status(
+                { sessionID },
+                { location: await currentLocation(sessionID) },
+              ),
             ),
         },
         {
@@ -87,8 +98,11 @@ export default Plugin.define({
           group: "Retitle",
           slash: { name: "retitle-enable" },
           run: () =>
-            run("Enable", (sessionID) =>
-              retitle.enable({ sessionID }, { location: currentLocation(sessionID) }),
+            run("Enable", async (sessionID) =>
+              retitleClient().enable(
+                { sessionID },
+                { location: await currentLocation(sessionID) },
+              ),
             ),
         },
       ],

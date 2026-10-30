@@ -1,12 +1,12 @@
 /** A trimmed view of one session message, enough to build a title prompt. */
 export interface TranscriptMessage {
-  role: "user" | "assistant" | "other"
+  role: "user" | "assistant" | "compaction" | "other"
   text: string
 }
 
 export interface Transcript {
   text: string
-  /** Combined length of all user text, used for the minPromptLength guard. */
+  /** Combined length of all user text, before code blocks are stripped. */
   userLength: number
 }
 
@@ -52,7 +52,12 @@ export function condenseTranscript(
     if (message.role === "other") continue
     const body = collapse(stripCodeBlocks(message.text))
     if (!body) continue
-    const label = message.role === "user" ? "User: " : "Assistant: "
+    const label =
+      message.role === "user"
+        ? "User: "
+        : message.role === "compaction"
+          ? "Summary: "
+          : "Assistant: "
     lines.push(truncate(label + body, maxMessageChars))
   }
 
@@ -99,13 +104,24 @@ export function sanitizeTitle(raw: string, maxLength: number): string {
 
   let title = firstLine
   title = title.replace(/^title\s*[:\-]\s*/i, "")
-  title = title.replace(/^[#>*\-\s]+/, "")
+  title = title.replace(/^[#>*_~\-\s]+/, "")
   title = title.replace(/^["'`]+|["'`]+$/g, "")
   title = collapse(title)
   title = title.replace(/[.!?;,:\s]+$/, "")
+  title = title.replace(/[#>*_~`]+$/, "")
+  title = title.replace(/[.!?;,:\s]+$/, "")
 
-  if (maxLength > 0 && title.length > maxLength) {
-    title = title.slice(0, maxLength).replace(/[.!?;,:\s]+$/, "").trim()
+  if (maxLength > 0) {
+    // Count code points, not UTF-16 code units, so an emoji is never split in
+    // half and the visible length matches the configured maximum.
+    const characters = Array.from(title)
+    if (characters.length > maxLength) {
+      title = characters
+        .slice(0, maxLength)
+        .join("")
+        .replace(/[.!?;,:\s]+$/, "")
+        .trim()
+    }
   }
   return title
 }

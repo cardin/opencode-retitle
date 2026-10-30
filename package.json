@@ -26,20 +26,42 @@
   },
   "files": [
     "src",
+    "docs",
     "README.md"
   ],
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "test": "node --test test/config.test.ts test/guard.test.ts test/state.test.ts test/titles.test.ts test/retitle.test.ts",
+    "test": "node --test test/config.test.ts test/guard.test.ts test/state.test.ts test/titles.test.ts test/retitle.test.ts test/tui.test.ts",
     "test:integration": "node --test test/integration.test.ts",
     "test:all": "node --test test/*.test.ts",
-    "prepublishOnly": "npm run typecheck && npm run test"
+    "prepublishOnly": "npm run typecheck && npm run test:all"
   },
   "dependencies": {
-    "@opencode/plugin": "^2.0.27"
+    "@opencode/plugin": "^2.2.3"
+  },
+  "peerDependencies": {
+    "@opencode/theme": ">=2.2.3",
+    "@opentui/core": ">=0.8.0",
+    "@opentui/solid": ">=0.8.0",
+    "solid-js": ">=1.9.0"
+  },
+  "peerDependenciesMeta": {
+    "@opencode/theme": {
+      "optional": true
+    },
+    "@opentui/core": {
+      "optional": true
+    },
+    "@opentui/solid": {
+      "optional": true
+    },
+    "solid-js": {
+      "optional": true
+    }
   },
   "devDependencies": {
     "@types/node": "^22.15.0",
-    "typescript": "^5.7.3"
+    "solid-js": "^1.9.0",
+    "typescript": "^5.9.0"
   }
 }

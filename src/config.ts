@@ -14,23 +14,36 @@ export interface RetitleConfig {
    */
   lockExistingTitles: boolean
   /**
-   * How long (ms) a built-in title generation stays attributable to OpenCode, so
-   * the resulting rename is not mistaken for a manual one. Must outlast the
-   * title model call.
+   * How long (ms) after the built-in title request starts or its response
+   * arrives the resulting rename stays attributable to OpenCode. The response
+   * refresh means this does not have to outlast a slow model call.
    */
   builtinGraceMs: number
   /** `"providerID/modelID"` for title generation, or null to inherit the session model. */
   model: string | null
   /** Maximum generated title length in characters. */
   titleMaxLength: number
-  /** Minimum combined user text length before a title is generated. */
+  /** Minimum transcript text (code blocks excluded) before a title is generated. */
   minPromptLength: number
   /** Log decisions to the OpenCode log. */
   debug: boolean
 }
 
-/** Default for {@link RetitleConfig.builtinGraceMs}. */
-export const DEFAULT_BUILTIN_GRACE_MS = 45_000
+/**
+ * Default for {@link RetitleConfig.builtinGraceMs}.
+ *
+ * The marker is written when the built-in title request starts and refreshed
+ * when its HTTP response arrives. The rename follows the response, so a short
+ * window is enough even when the model queues for minutes behind a provider:
+ * the old 45-second start-only window expired before a slow title call
+ * finished, and the generated rename was then mistaken for a manual one. Two
+ * minutes from the response is ample for the rename to be published, while
+ * keeping the window in which a genuine manual rename could be attributed to
+ * OpenCode small. Hosts that do not expose `http.response` still get the
+ * start-time marker; for those, a title call longer than two minutes can still
+ * expire, but that is the compatibility fallback rather than the normal path.
+ */
+export const DEFAULT_BUILTIN_GRACE_MS = 2 * 60 * 1000
 
 export const defaultConfig: RetitleConfig = {
   turns: 5,

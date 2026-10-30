@@ -12,6 +12,10 @@ export interface SessionState {
   locked: boolean
   /** Set when a fork was observed, cleared when its first response is retitled. */
   forkPending: boolean
+  /** A turn-interval retitle is waiting for the response to finish. */
+  pendingTurns: boolean
+  /** A subagent/child session: it inherits its parent's title and is never retitled. */
+  child: boolean
   /** Epoch ms of the last write, used for pruning. */
   updated: number
 }
@@ -35,7 +39,15 @@ export interface StorageLike {
 }
 
 export const STORAGE_PREFIX = "session/"
-export const MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000
+/**
+ * How long per-session bookkeeping is kept.
+ *
+ * This is provenance, not just a cache: if `lastWrite` is pruned, a title this
+ * plugin wrote becomes indistinguishable from a manual one and the next rename
+ * locks the session. Keep it long enough that stale provenance is rare (180
+ * days) while still bounding growth for abandoned sessions.
+ */
+export const MAX_AGE_MS = 180 * 24 * 60 * 60 * 1000
 
 /**
  * Storage key prefix for "built-in title generation in flight" markers.
@@ -57,7 +69,14 @@ function builtinPendingAt(value: unknown): number | undefined {
 }
 
 export function emptyState(now: number): SessionState {
-  return { turns: 0, locked: false, forkPending: false, updated: now }
+  return {
+    turns: 0,
+    locked: false,
+    forkPending: false,
+    pendingTurns: false,
+    child: false,
+    updated: now,
+  }
 }
 
 export function isSessionState(value: unknown): value is SessionState {
@@ -71,6 +90,15 @@ export function isSessionState(value: unknown): value is SessionState {
   )
 }
 
+/** Fill fields added after an older state was persisted. */
+function normalizeState(value: SessionState): SessionState {
+  return {
+    ...value,
+    pendingTurns: value.pendingTurns === true,
+    child: value.child === true,
+  }
+}
+
 /**
  * In-memory cache in front of the plugin storage. Writes are write-through so a
  * plugin reload does not lose lock or turn state.
@@ -81,6 +109,7 @@ export class StateStore {
   private readonly persisted: Set<string>
   private readonly builtinTtlMs: number
   private writes: number
+  private pruning: Promise<void> | undefined
 
   constructor(storage: StorageLike, builtinTtlMs: number = DEFAULT_BUILTIN_GRACE_MS) {
     this.storage = storage
@@ -108,14 +137,65 @@ export class StateStore {
 
     const stored = await this.storage.get(STORAGE_PREFIX + sessionID)
     if (isSessionState(stored) && now - stored.updated < MAX_AGE_MS) {
-      this.cache.set(sessionID, stored)
+      const state = normalizeState(stored)
+      this.cache.set(sessionID, state)
       this.persisted.add(sessionID)
-      return { state: stored, persisted: true }
+      return { state, persisted: true }
     }
 
     const fresh = emptyState(now)
     this.cache.set(sessionID, fresh)
     return { state: fresh, persisted: false }
+  }
+
+  /**
+   * Forget the in-memory copy and read the current state from shared storage.
+   *
+   * Another plugin instance may have written the state (for example our own
+   * title, which must not be mistaken for a foreign rename). The cache cannot be
+   * trusted for that decision.
+   */
+  async reload(sessionID: string, now: number = Date.now()): Promise<SessionState> {
+    const stored = await this.readStored(sessionID, now)
+    if (stored !== undefined) {
+      // Keep the object identity of an already cached state: a retitle run may
+      // be holding it while it waits for the model, and must see a lock that
+      // arrived on another instance.
+      const cached = this.cache.get(sessionID)
+      if (cached !== undefined) {
+        if (cached.updated > stored.updated) {
+          // The cache has newer unsaved turn changes. Merge only the fields a
+          // concurrent event (lock, provenance, pending flags) can set.
+          cached.locked = cached.locked || stored.locked
+          cached.child = cached.child || stored.child
+          cached.forkPending = cached.forkPending || stored.forkPending
+          cached.pendingTurns = cached.pendingTurns || stored.pendingTurns
+          if (stored.lastWrite !== undefined) cached.lastWrite = stored.lastWrite
+          if (stored.baseline !== undefined) cached.baseline = stored.baseline
+        } else {
+          Object.assign(cached, stored)
+        }
+        this.persisted.add(sessionID)
+        return cached
+      }
+      this.cache.set(sessionID, stored)
+      this.persisted.add(sessionID)
+      return stored
+    }
+
+    this.cache.delete(sessionID)
+    this.persisted.delete(sessionID)
+    return this.load(sessionID, now)
+  }
+
+  /**
+   * Read the persisted state without changing the cache. Returns undefined when
+   * nothing valid and fresh is stored for the session.
+   */
+  async readStored(sessionID: string, now: number = Date.now()): Promise<SessionState | undefined> {
+    const stored = await this.storage.get(STORAGE_PREFIX + sessionID)
+    if (!isSessionState(stored) || now - stored.updated >= MAX_AGE_MS) return undefined
+    return normalizeState(stored)
   }
 
   /** Read without touching storage; returns undefined when nothing is cached. */
@@ -160,13 +240,29 @@ export class StateStore {
       turns: state.turns,
       locked: state.locked,
       forkPending: state.forkPending,
+      pendingTurns: state.pendingTurns,
+      child: state.child,
       updated: state.updated,
       ...(state.lastWrite === undefined ? {} : { lastWrite: state.lastWrite }),
       ...(state.baseline === undefined ? {} : { baseline: state.baseline }),
     })
 
     this.writes += 1
-    if (this.writes % 50 === 0) await this.prune(now)
+    this.maybePrune(now)
+  }
+
+  /**
+   * Prune in the background once every 50 writes. Pruning scans every stored
+   * session, so awaiting it on the save path stalls event handling behind the
+   * whole database. One prune at a time is enough; a later write retries.
+   */
+  private maybePrune(now: number): void {
+    if (this.writes % 50 !== 0 || this.pruning !== undefined) return
+    this.pruning = this.prune(now)
+      .catch(() => undefined)
+      .finally(() => {
+        this.pruning = undefined
+      })
   }
 
   /** Remove cached and stored entries older than the retention window. */

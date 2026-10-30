@@ -2,6 +2,7 @@ import assert from "node:assert/strict"
 import test from "node:test"
 
 import {
+  DEFAULT_BUILTIN_GRACE_MS,
   defaultConfig,
   loadConfig,
   normalizeConfig,
@@ -77,4 +78,11 @@ test("loadConfig applies defaults, then plugin options", () => {
 
 test("loadConfig falls back to defaults with no options", () => {
   assert.deepEqual(loadConfig(), defaultConfig)
+})
+
+test("the default built-in attribution window is short because the response refreshes it", () => {
+  // The marker is refreshed when the title request's response arrives, so the
+  // window only has to cover the rename that follows it, not a slow model call.
+  assert.equal(DEFAULT_BUILTIN_GRACE_MS, 2 * 60 * 1000)
+  assert.equal(defaultConfig.builtinGraceMs, DEFAULT_BUILTIN_GRACE_MS)
 })

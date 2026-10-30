@@ -27,7 +27,10 @@ function toTranscript(messages: readonly SessionMessage[]): TranscriptMessage[] 
       continue
     }
     if (message.type === "compaction") {
-      out.push({ role: "other", text: "summary" in message ? message.summary : "" })
+      // The summary is often the only content left after compaction. Keep it in
+      // the transcript so the post-compaction retitle still has something to
+      // work with; it never counts as user text.
+      out.push({ role: "compaction", text: "summary" in message ? message.summary : "" })
     }
   }
   return out
@@ -62,13 +65,31 @@ export default Plugin.define({
     // delivers every event to every instance, so an instance that did not serve
     // the title request would otherwise see the generated rename with no marker
     // and lock the session as a manual rename.
-    await ctx.session.hook("title", async (event) => {
+    //
+    // The marker is refreshed when the title request's response arrives, which
+    // is what lets the grace window stay short: a slow or rate-limited model
+    // can take minutes, but the rename follows the response, not the start.
+    const markBuiltin = async (sessionID: string, phase: string): Promise<void> => {
       try {
-        await store.markBuiltinPending(event.sessionID)
+        await store.markBuiltinPending(sessionID)
       } catch (error) {
-        log("could not record built-in title generation", error)
+        log(`could not record built-in title ${phase}`, error)
       }
+    }
+    await ctx.session.hook("title", async (event) => {
+      await markBuiltin(event.sessionID, "generation")
     })
+    try {
+      await ctx.session.hook("http.response", async (event) => {
+        // A failed title request cannot publish a rename; only a successful
+        // response starts the short window that ends with the rename.
+        if (event.kind !== "title" || !event.response.ok) return
+        await markBuiltin(event.sessionID, "response")
+      })
+    } catch (error) {
+      // Older hosts do not expose this hook; the title-start marker remains.
+      log("could not record built-in title completion", error)
+    }
 
     const coordinator = new RetitleCoordinator({
       config,
@@ -80,19 +101,26 @@ export default Plugin.define({
       },
       async readSession(sessionID) {
         const info = await ctx.session.get({ sessionID })
-        return { title: info.title, model: info.model }
+        return { title: info.title, model: info.model, parentID: info.parentID }
       },
       async generateTitle({ model, prompt }) {
         // OpenCode 2.2 deprecates `ctx.generate` in favour of
         // `ctx.experimental.generate`. Prefer the new location when the running
-        // build provides it, and keep the old one for 2.0/2.1.
+        // build provides it, and keep the old one as an optional fallback for
+        // 2.0/2.1. Neither is assumed to exist at runtime.
+        type GenerateText = (input: {
+          model: { providerID: string; id: string; variant?: string }
+          prompt: string
+        }) => Promise<{ text: string }>
         const experimental = (
           ctx as unknown as {
-            experimental?: { generate?: typeof ctx.generate }
+            experimental?: { generate?: { text?: GenerateText } }
           }
         ).experimental
-        const generate = experimental?.generate ?? ctx.generate
-        const result = await generate.text({
+        const legacy = (ctx as unknown as { generate?: { text?: GenerateText } }).generate
+        const generateText = experimental?.generate?.text ?? legacy?.text
+        if (!generateText) throw new Error("no title generation API is available")
+        const result = await generateText({
           model: { providerID: model.providerID, id: model.id, variant: model.variant },
           prompt,
         })
@@ -114,9 +142,13 @@ export default Plugin.define({
       },
       enable: async (input) => {
         const { sessionID } = input as { sessionID: string }
-        const { wasLocked } = await coordinator.enable(sessionID)
+        const { wasLocked, outcome } = await coordinator.enable(sessionID)
         const info = await ctx.session.get({ sessionID })
-        const title = info.title === undefined ? "" : ` — title is now "${info.title}"`
+        const title = outcome.applied
+          ? info.title === undefined
+            ? ""
+            : ` — title is now "${info.title}"`
+          : ` — no title generated: ${outcome.reason}`
         return {
           text: wasLocked
             ? `Retitling re-enabled${title}.`
@@ -129,11 +161,21 @@ export default Plugin.define({
 
     const controller = new AbortController()
 
-    // OpenCode loads one plugin instance per open location and streams every
-    // event to all of them, so ignore events that belong to another directory.
-    const isOurLocation = (event: OpenCodeEvent): boolean => {
-      const there = (event as { location?: { directory?: string; workspaceID?: string } }).location
-      if (there?.directory === undefined) return true
+    // Ignore text/tool deltas and every other event as early as possible; only
+    // these types can change a title or the retitle schedule.
+    const HANDLED_EVENTS = new Set<string>([
+      "session.created",
+      "session.renamed",
+      "session.inbox.enqueued",
+      "session.execution.succeeded",
+      "session.compaction.ended",
+      "session.forked",
+    ])
+
+    const sameLocation = (there: {
+      directory?: string
+      workspaceID?: string
+    }): boolean => {
       if (there.directory !== ctx.location.directory) return false
       return (
         there.workspaceID === undefined ||
@@ -142,11 +184,38 @@ export default Plugin.define({
       )
     }
 
+    // OpenCode loads one plugin instance per open location and streams every
+    // event to all of them, so ignore events that belong to another directory.
+    // Some events omit `location`; resolve the owning session instead of
+    // assuming every instance owns it.
+    const isOurLocation = async (event: OpenCodeEvent): Promise<boolean> => {
+      const there = (event as { location?: { directory?: string; workspaceID?: string } }).location
+      if (there?.directory !== undefined) return sameLocation(there)
+
+      const data = (event as { data?: { sessionID?: unknown } }).data
+      const sessionID = typeof data?.sessionID === "string" ? data.sessionID : undefined
+      if (sessionID === undefined) return true
+
+      try {
+        const info = await ctx.session.get({ sessionID })
+        const sessionLocation = info.location as
+          | { directory?: string; workspaceID?: string }
+          | undefined
+        if (sessionLocation?.directory !== undefined) return sameLocation(sessionLocation)
+      } catch (error) {
+        log(`could not resolve location for session ${sessionID}`, error)
+      }
+      // Older servers may not expose a location; keep the previous permissive
+      // behaviour rather than dropping the event entirely.
+      return true
+    }
+
     const handle = async (event: OpenCodeEvent): Promise<void> => {
-      if (!isOurLocation(event)) return
+      if (!HANDLED_EVENTS.has(event.type)) return
+      if (!(await isOurLocation(event))) return
       switch (event.type) {
         case "session.created":
-          await coordinator.onSessionCreated(event.data.sessionID)
+          await coordinator.onSessionCreated(event.data.sessionID, event.data.parentID)
           break
         case "session.renamed":
           await coordinator.onRenamed(event.data.sessionID, event.data.title)
@@ -156,14 +225,14 @@ export default Plugin.define({
             await coordinator.onUserPrompt(event.data.sessionID)
           }
           break
+        case "session.execution.succeeded":
+          await coordinator.onExecutionSucceeded(event.data.sessionID)
+          break
         case "session.compaction.ended":
           await coordinator.onCompactionEnded(event.data.sessionID)
           break
         case "session.forked":
           await coordinator.onForked(event.data.sessionID)
-          break
-        case "session.step.ended":
-          await coordinator.onStepEnded(event.data.sessionID)
           break
         default:
           break
